@@ -1,0 +1,34 @@
+name: Blackfuel PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+concurrency:
+  group: bf-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Skip draft PRs
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # post sticky comment + push fixes if asked
+      pull-requests: write  # post sticky comment + submit PR review
+      issues: read          # read prior comments for previous-review carry-forward
+
+    steps:
+      - name: Run Blackfuel code review
+        uses: blackfuel-ai/bf-review-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token: ${{ github.token }}
+          # Optional: route the PR approval/changes-request review through a
+          # bot PAT so the verdict shows up as a review from that identity and
+          # can gate merges via branch protection. Without this, the default
+          # GITHUB_TOKEN is used and cannot approve PRs the Actions runner authored.
+          # approver-token: ${{ secrets.BF_REVIEWER_PAT }}
+          # Optional: set to 'false' to post only the sticky review comment
+          # without submitting a formal PR review (advisory mode).
+          # submit-verdict: 'false'

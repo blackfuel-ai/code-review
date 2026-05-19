@@ -1,0 +1,203 @@
+name: Blackfuel Code Review
+description: AI-powered code review on pull requests, against any OpenAI-compatible inference endpoint.
+author: Blackfuel
+
+branding:
+  icon: check-circle
+  color: purple
+
+inputs:
+  openai-api-key:
+    description: API key for the OpenAI-compatible inference endpoint (defaults to Fuel1 by Blackfuel).
+    required: true
+  github-token:
+    description: GitHub token with `contents:write` and `pull-requests:write` scopes. The default `GITHUB_TOKEN` works for the default scope; provide a PAT if you want approval reviews from a specific bot identity.
+    required: true
+  model:
+    description: Model identifier (e.g. `oai@MiniMaxAI/MiniMax-M2.7`).
+    required: false
+    default: 'oai@MiniMaxAI/MiniMax-M2.7'
+  openai-base-url:
+    description: Base URL for the inference endpoint. Defaults to Fuel1 — point this at any OpenAI-compatible API to use a different provider.
+    required: false
+    default: 'https://api.fuel1.ai'
+  reviewer-handle:
+    description: GitHub handle (without `@`) that humans can mention in PR comments to leave advisory notes for the reviewer. Notes are fed into the review prompt but never override findings.
+    required: false
+    default: 'code-reviewer'
+  submit-verdict:
+    description: When `true` (default), triage the sticky review comment into an `approved` / `changes_requested` verdict and submit a formal PR review (`gh pr review`). Set to `false` to post only the sticky review comment (advisory mode — no merge gating).
+    required: false
+    default: 'true'
+  approver-token:
+    description: Optional PAT used ONLY to submit the formal PR review when `submit-verdict` is `true`. Falls back to `github-token` when unset. Use a separate PAT when you want the approval to come from a named bot identity, since reviews submitted with the default `GITHUB_TOKEN` cannot approve PRs the GitHub Actions runner authored.
+    required: false
+    default: ''
+
+outputs:
+  duration:
+    description: Review duration in seconds.
+    value: ${{ steps.consolidate.outputs.duration }}
+  verdict:
+    description: '`approved` or `changes_requested` when `submit-verdict` is true; empty otherwise.'
+    value: ${{ steps.verdict.outputs.verdict }}
+  rationale:
+    description: Brief explanation of the verdict.
+    value: ${{ steps.verdict.outputs.rationale }}
+
+runs:
+  using: composite
+  steps:
+    - name: Save action scripts
+      # Must run before checkout: for local composite actions, github.action_path
+      # resolves to a path inside the workspace. The checkout below replaces the
+      # workspace with the PR branch, which may predate this action directory.
+      # Copying scripts to a temp dir first ensures they survive the checkout.
+      shell: bash
+      run: |
+        tmp=$(mktemp -d)
+        cp -r "${{ github.action_path }}/." "$tmp/"
+        echo "BF_REVIEW_ACTION_SCRIPTS=$tmp" >> "$GITHUB_ENV"
+
+    - name: Checkout repository
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      with:
+        fetch-depth: 0
+        ref: ${{ github.event.pull_request.head.ref }}
+
+    - name: Configure Git identity
+      shell: bash
+      run: |
+        git config --global user.name "claude[bot]"
+        git config --global user.email "claude[bot]@users.noreply.github.com"
+
+    - name: Stage embedded skills
+      # Copy the skills bundled with this action into the workspace so the
+      # review CLI discovers them from .claude/skills/ in cwd. Consumer repos
+      # get the code-review-persona and assess-pr-comments skills for free —
+      # no local skill files required. If the repo already has
+      # .claude/skills/<name>/ we overwrite with the action's copy (source of
+      # truth lives here).
+      shell: bash
+      run: |
+        if [[ -d "$BF_REVIEW_ACTION_SCRIPTS/skills" ]]; then
+          mkdir -p .claude/skills
+          cp -r "$BF_REVIEW_ACTION_SCRIPTS/skills/." .claude/skills/
+          echo "Staged embedded skills:"
+          ls -1 .claude/skills/
+        fi
+
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      with:
+        bun-version: latest
+
+    - name: Setup Node.js
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      with:
+        node-version: '24'
+
+    - name: Install Claude Code CLI
+      shell: bash
+      run: |
+        npm install -g @anthropic-ai/claude-code
+        # The claudish CLI (the OpenAI-compatible wrapper bf-review invokes)
+        # lives in packages/cli of its monorepo; clone + build + install the
+        # subpackage rather than the root (which is a private workspace with
+        # no bin).
+        src="$(mktemp -d)/claudish"
+        git clone --branch "7.x" --depth 1 "https://github.com/blackfuel-ai/claudish.git" "$src"
+        (cd "$src" && bun install --frozen-lockfile 2>/dev/null || (cd "$src" && bun install))
+        (cd "$src" && bun run build:cli)
+        bun install -g "$src/packages/cli"
+        claudish --version
+
+    - name: Fetch reviewer notes
+      # Collect PR comments that @-mention the reviewer handle. The notes
+      # are fed into the review prompt as ADVISORY context — they never
+      # reach the verdict step, so humans cannot override findings by
+      # posting a comment.
+      id: reviewer-notes
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPLY_HANDLE: ${{ inputs.reviewer-handle }}
+        REPLY_OUTPUT_FILE: /tmp/reviewer-notes.json
+      run: python3 "$BF_REVIEW_ACTION_SCRIPTS/fetch_reply_comments.py"
+
+    - name: Run Code Review
+      # No retry on failure: a failed review run should surface as a failed
+      # workflow rather than silently degrade into an empty/half-baked
+      # sticky comment that the verdict step then approves.
+      id: review
+      shell: bash
+      env:
+        OPENROUTER_API_KEY: dummy
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        OPENAI_BASE_URL: ${{ inputs.openai-base-url }}
+        BF_REVIEW_MODEL: ${{ inputs.model }}
+        REVIEWER_HANDLE: ${{ inputs.reviewer-handle }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        REVIEWER_NOTES_FILE: /tmp/reviewer-notes.json
+      run: python3 "$BF_REVIEW_ACTION_SCRIPTS/run_review.py"
+
+    - name: Post Review Summary
+      if: always() && steps.review.outcome != 'cancelled'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        BF_REVIEW_MODEL: ${{ inputs.model }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        PR_URL: ${{ github.event.pull_request.html_url }}
+        TRIGGER_USER: ${{ github.event.pull_request.user.login }}
+        REVIEW_OUTCOME: ${{ steps.review.outcome }}
+        REVIEW_DURATION: ${{ steps.review.outputs.duration }}
+      run: python3 "$BF_REVIEW_ACTION_SCRIPTS/format_summary.py"
+
+    - name: Consolidate outputs
+      id: consolidate
+      if: always()
+      shell: bash
+      run: |
+        echo "duration=${{ steps.review.outputs.duration }}" >> "$GITHUB_OUTPUT"
+
+    - name: Triage findings into a verdict
+      id: verdict
+      if: always() && inputs.submit-verdict == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        OPENROUTER_API_KEY: dummy
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        OPENAI_BASE_URL: ${{ inputs.openai-base-url }}
+        BF_REVIEW_MODEL: ${{ inputs.model }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: python3 "$BF_REVIEW_ACTION_SCRIPTS/run_verdict.py"
+
+    - name: Submit PR review
+      # Only submit when triage produced a real verdict — avoids posting an
+      # empty "changes requested" review when the verdict step itself errored.
+      if: always() && inputs.submit-verdict == 'true' && steps.verdict.outputs.verdict != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.approver-token != '' && inputs.approver-token || inputs.github-token }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        REPO: ${{ github.repository }}
+        VERDICT: ${{ steps.verdict.outputs.verdict }}
+        RATIONALE: ${{ steps.verdict.outputs.rationale }}
+      run: |
+        body_file="$(mktemp)"
+        if [[ "$VERDICT" == "approved" ]]; then
+          printf 'Code review passed.\n\n' > "$body_file"
+          [[ -n "$RATIONALE" ]] && printf '%s\n' "$RATIONALE" >> "$body_file"
+          gh pr review "$PR_NUMBER" --repo "$REPO" --approve --body-file "$body_file"
+        else
+          printf 'Code review requested changes.\n\n' > "$body_file"
+          [[ -n "$RATIONALE" ]] && printf '%s\n' "$RATIONALE" >> "$body_file"
+          gh pr review "$PR_NUMBER" --repo "$REPO" --request-changes --body-file "$body_file"
+        fi

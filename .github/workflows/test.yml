@@ -1,0 +1,47 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Run pytest
+        run: uv run --with pytest pytest tests/ -v
+
+  action-yaml-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate action.yml
+        run: |
+          python3 -c "import yaml, sys; yaml.safe_load(open('action.yml')); print('action.yml is valid YAML')"
+
+      - name: Verify required action.yml fields
+        run: |
+          python3 - <<'PY'
+          import yaml, sys
+          with open('action.yml') as f:
+              spec = yaml.safe_load(f)
+          required = ['name', 'description', 'inputs', 'outputs', 'runs']
+          missing = [k for k in required if k not in spec]
+          if missing:
+              print(f"Missing required fields: {missing}", file=sys.stderr)
+              sys.exit(1)
+          if spec['runs'].get('using') != 'composite':
+              print(f"`runs.using` must be 'composite', got {spec['runs'].get('using')!r}", file=sys.stderr)
+              sys.exit(1)
+          print("action.yml looks good")
+          PY

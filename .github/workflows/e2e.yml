@@ -1,0 +1,90 @@
+name: E2E
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    # Skip on fork PRs — secrets are not available, the action cannot run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # sticky comment + any auto-fix the action would push
+      pull-requests: write  # sticky comment + dismissing prior reviews
+      issues: read          # reading prior comments for previous-review carry-forward
+    steps:
+      - name: Check OPENAI_API_KEY secret is set
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [[ -z "$OPENAI_API_KEY" ]]; then
+            echo "::error::OPENAI_API_KEY secret is not set. Add it in Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          echo "OPENAI_API_KEY is present (length: ${#OPENAI_API_KEY})"
+
+      - name: Checkout for local action reference
+        # `uses: ./` requires the action repo to be checked out first so the
+        # composite action can resolve. The action's own first step then
+        # re-checks-out the PR head ref before running the review.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Run bf-review (local action, current ref)
+        id: review
+        if: github.event_name == 'pull_request'
+        uses: ./
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token: ${{ github.token }}
+          approver-token: ${{ secrets.BF_APPROVAL_MANAGER_GH_TOKEN }}
+
+      - name: Verify sticky comment landed on the PR
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          # The action posts (or PATCHes) a comment whose body starts with
+          # the sticky marker. Poll for ~30s after the action finishes to
+          # absorb any GitHub API replication lag.
+          marker='<!-- bf-review-code-report -->'
+          for attempt in 1 2 3 4 5 6; do
+            body=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
+              --jq ".[] | select(.body | startswith(\"$marker\")) | .body" \
+              | head -c 5000)
+            if [[ -n "$body" ]]; then
+              echo "::notice::Sticky comment found on PR #${PR_NUMBER}"
+              echo "--- comment preview (first 50 lines) ---"
+              echo "$body" | head -50
+              exit 0
+            fi
+            echo "Sticky comment not yet visible (attempt $attempt/6), waiting 5s..."
+            sleep 5
+          done
+          echo "::error::No sticky comment with marker '$marker' was posted within 30s of the review completing. The review step ${{ steps.review.outcome }}."
+          exit 1
+
+      - name: Verify verdict was emitted
+        if: github.event_name == 'pull_request'
+        env:
+          VERDICT: ${{ steps.review.outputs.verdict }}
+        run: |
+          if [[ "$VERDICT" != "approved" && "$VERDICT" != "changes_requested" ]]; then
+            echo "::error::Expected verdict to be 'approved' or 'changes_requested', got '$VERDICT'"
+            exit 1
+          fi
+          echo "::notice::Verdict emitted: $VERDICT"
+
+      - name: Smoke-only mode (workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "workflow_dispatch has no PR context — secret presence verified, action not executed."
+          echo "To exercise the full pipeline, open a same-repo pull request."
