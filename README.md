@@ -40,7 +40,7 @@ jobs:
       pull-requests: write  # post sticky comment + submit PR review
       issues: read          # read prior comments for previous-review carry-forward
     steps:
-      - uses: blackfuel-ai/bf-review-action@v1
+      - uses: blackfuel-ai/code-review@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           github-token: ${{ github.token }}

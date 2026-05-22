@@ -451,7 +451,7 @@ class TestStickyFooter:
     def test_default_assess_skill_url_points_to_main(self):
         assert ASSESS_SKILL_URL.endswith("/main/skills/assess-pr-comments/SKILL.md")
         assert ASSESS_SKILL_URL.startswith(
-            "https://raw.githubusercontent.com/blackfuel-ai/bf-review-action/"
+            "https://raw.githubusercontent.com/blackfuel-ai/code-review/"
         )
 
     def test_footer_is_appended_to_posted_body(self, monkeypatch):

@@ -61,7 +61,7 @@ REVIEWER_HANDLE = os.environ.get("REVIEWER_HANDLE", "code-reviewer")
 # override via ``BF_REVIEW_ASSESS_SKILL_URL`` for forks.
 ASSESS_SKILL_URL = os.environ.get(
     "BF_REVIEW_ASSESS_SKILL_URL",
-    "https://raw.githubusercontent.com/blackfuel-ai/bf-review-action/main/skills/assess-pr-comments/SKILL.md",
+    "https://raw.githubusercontent.com/blackfuel-ai/code-review/main/skills/assess-pr-comments/SKILL.md",
 )
 
 
