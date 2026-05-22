@@ -1,8 +1,52 @@
 # Blackfuel Code Review Action
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 AI-powered code review for GitHub pull requests. Runs a senior-architect-style review with three expert personas, posts a sticky review comment with structured findings, and emits an `approved` / `changes_requested` verdict you can wire into a PR approval gate.
 
 Runs against any OpenAI-compatible inference endpoint. Defaults to [Fuel1](https://fuel1.ai) by Blackfuel.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [What it does on every PR](#what-it-does-on-every-pr)
+- [Inputs](#inputs)
+- [Outputs](#outputs)
+- [Required permissions](#required-permissions)
+- [How the sticky comment works](#how-the-sticky-comment-works)
+- [Reviewer notes](#reviewer-notes-advisory-only)
+- [Running locally](#running-locally)
+- [Layout](#layout)
+
+## Quick start
+
+1. **Add a secret.** Settings → Secrets and variables → Actions → New repository secret. Name `OPENAI_API_KEY`, value your Fuel1 API key (or any OpenAI-compatible key, paired with `openai-base-url`).
+2. **Add the workflow.** Create `.github/workflows/pr-review.yml` with the minimal config below.
+3. **Open a PR.** Within ~2 minutes you'll see a sticky review comment and a verdict review on the PR page.
+
+```yaml
+# .github/workflows/pr-review.yml
+name: PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # post sticky comment + push fixes if asked
+      pull-requests: write  # post sticky comment + submit PR review
+      issues: read          # read prior comments for previous-review carry-forward
+    steps:
+      - uses: blackfuel-ai/bf-review-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token: ${{ github.token }}
+```
+
+Pin to `@v1` for the latest stable release, or to a commit SHA for fully reproducible runs. See [`examples/pr-review.yml`](examples/pr-review.yml) for an annotated workflow covering the optional inputs (`approver-token`, `submit-verdict`, draft-PR skipping, concurrency).
 
 ## What it does on every PR
 
@@ -13,23 +57,21 @@ Runs against any OpenAI-compatible inference endpoint. Defaults to [Fuel1](https
 5. **Renovate-aware** — detects Renovate-authored PRs and switches to a release-notes / breaking-change analysis prompt instead.
 6. **Verdict triage** — a separate step reads the sticky comment and decides whether unfixed findings are production-critical enough to block the merge.
 
-## Quick start
-
-1. **Add a secret.** Settings → Secrets and variables → Actions → New repository secret. Name `OPENAI_API_KEY`, value your Fuel1 API key (or any OpenAI-compatible key, paired with `openai-base-url`).
-2. **Add the workflow.** Copy [`examples/pr-review.yml`](examples/pr-review.yml) into `.github/workflows/pr-review.yml` of your repo.
-3. **Open a PR.** Within ~2 minutes you'll see a sticky review comment and a verdict review on the PR page.
-
 ## Inputs
 
 | Input | Required | Default | Description |
 |---|---|---|---|
 | `openai-api-key` | yes | — | API key for the inference endpoint. |
 | `github-token` | yes | — | Token with `contents:write` and `pull-requests:write`. `${{ github.token }}` is fine here; see `approver-token` below if you need approval reviews from a named bot. |
-| `model` | no | `oai@MiniMaxAI/MiniMax-M2.7` | Model identifier. |
+| `model` | no | `oai@MiniMaxAI/MiniMax-M2.7` | Model identifier in `<provider>@<model>` form, where `<provider>` is the inference provider key (`oai` for the OpenAI-compatible endpoint). |
 | `openai-base-url` | no | `https://api.fuel1.ai` | OpenAI-compatible base URL. Override to use another provider. |
 | `reviewer-handle` | no | `code-reviewer` | Handle (without `@`) humans can mention in PR comments to leave advisory notes. |
 | `submit-verdict` | no | `true` | When `true`, triage the sticky review into a verdict and submit a formal PR review. Set to `false` for advisory mode (sticky comment only, no merge gating). |
-| `approver-token` | no | — | Optional PAT used only for the `gh pr review` submission. Set this when you want the approval to come from a named bot identity — reviews submitted with the default `GITHUB_TOKEN` cannot approve PRs the Actions runner authored, so a separate PAT is required to gate merges via branch protection. |
+| `approver-token` | no | — | Optional PAT used only for the `gh pr review` submission. See [the verdict gating note](#a-note-on-verdict-gating). |
+
+### A note on verdict gating
+
+Reviews submitted with the default `GITHUB_TOKEN` **cannot approve PRs the Actions runner authored**, and such approvals do not satisfy branch protection rules. If you want the verdict to gate merges — or simply to show up as a review from a named bot identity — set `approver-token` to a separate PAT. The action uses it only for the final `gh pr review` submission; everything else runs under `github-token`.
 
 ## Outputs
 
@@ -89,3 +131,5 @@ tests/                   # Pytest suite for the scripts above
 ## License
 
 MIT. See [LICENSE](LICENSE).
+</content>
+</invoke>
