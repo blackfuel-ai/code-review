@@ -1,5 +1,5 @@
 [project]
-name = "bf-review-action"
+name = "code-review"
 version = "0.1.0"
 description = "AI-powered PR code review GitHub Action by Blackfuel."
 requires-python = ">=3.10"
