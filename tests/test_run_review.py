@@ -309,6 +309,15 @@ class TestBuildCodePromptDiffScoping:
         assert "git diff origin/main...HEAD" in prompt
         assert "gh pr diff" not in prompt
 
+    def test_prompt_uses_pr_base_branch(self, monkeypatch):
+        # A PR opened against a release branch must diff against that branch,
+        # not a hardcoded origin/main — otherwise commits belonging to the base
+        # branch leak into the review as spurious findings.
+        monkeypatch.setattr("run_review.BASE_REF", "bf/v0.6")
+        prompt = build_code_prompt("owner/repo", "42", "", None)
+        assert "git diff origin/bf/v0.6...HEAD" in prompt
+        assert "git diff origin/main...HEAD" not in prompt
+
 
 class TestBuildCodePromptPersonaSkill:
     """Guard that the code review prompt delegates to /code-review-persona.

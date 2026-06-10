@@ -55,6 +55,13 @@ STICKY_MARKER = "<!-- bf-review-code-report -->"
 # so humans can provide context without overriding findings.
 REVIEWER_HANDLE = os.environ.get("REVIEWER_HANDLE", "code-reviewer")
 
+# Base branch the PR is opened against (e.g. ``main``, ``bf/v0.6``). The diff
+# must be computed against this ref, NOT a hardcoded ``main`` — a PR targeting a
+# release branch otherwise diffs against ``origin/main`` and surfaces findings
+# for commits that belong to the base branch, not the PR. Falls back to ``main``
+# for local runs where the env var is absent.
+BASE_REF = os.environ.get("BF_BASE_REF") or "main"
+
 # Raw-GitHub URL of the assess-pr-comments runbook, embedded as a footer link
 # in the sticky review comment so a triaging agent or human can load the skill
 # directly. Pinned to ``main`` so readers always get the latest runbook;
@@ -232,7 +239,7 @@ You are a senior software architect.
 
 **Before starting the review:**
 
-1. Examine the diff: `git diff origin/main...HEAD`. Never two-dot.
+1. Examine the diff: `git diff origin/{BASE_REF}...HEAD`. Never two-dot.
 2. Read `CLAUDE.md` at the repository root for project conventions and coding standards. Read CLAUDE.md in any subdirectory related to the changes.
 3. Review the previous review (provided below) if any. Do NOT repeat items already marked `[x]` (resolved). \
 Focus on new or unresolved findings, and carry forward any `[ ]` items that are still valid.

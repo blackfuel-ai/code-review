@@ -50,7 +50,7 @@ Pin to `@v1` for the latest stable release, or to a commit SHA for fully reprodu
 
 ## What it does on every PR
 
-1. **Diff scoping** — pins the diff to `gh pr diff <PR>` / `git diff origin/main...HEAD` so reviews don't drift when `main` moves.
+1. **Diff scoping** — pins the diff to `git diff origin/<base-branch>...HEAD`, where `<base-branch>` is the branch the PR targets, so reviews cover only the PR's own commits and don't drift when the base branch moves.
 2. **Personas** — spawns three expert subagents (e.g. security, performance, API design) on top of a senior-architect base prompt, consolidates their findings.
 3. **Sticky comment** — posts (or updates) one review comment per PR with a checkbox-formatted finding list. Re-runs PATCH the same comment instead of stacking.
 4. **Reviewer notes** — humans can `@<reviewer-handle>` in PR comments to leave advisory notes that get fed into the next review pass (advisory only — they cannot override findings).

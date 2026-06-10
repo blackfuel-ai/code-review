@@ -149,6 +149,10 @@ runs:
         GH_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        # Base branch the PR targets, so the diff is computed against it rather
+        # than a hardcoded origin/main. Inherited by run_review.py and by the
+        # persona subagents' `git diff` calls.
+        BF_BASE_REF: ${{ github.event.pull_request.base.ref }}
         REVIEWER_NOTES_FILE: /tmp/reviewer-notes.json
       run: python3 "$BF_REVIEW_ACTION_SCRIPTS/run_review.py"
 

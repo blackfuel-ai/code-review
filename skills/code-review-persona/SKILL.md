@@ -23,13 +23,19 @@ If your spawn prompt says explicitly "No previous review — this is the first r
 
 ## Step 1: Collect the Diff
 
-Fetch the full diff:
+Fetch the full diff against the branch this PR is opened against. The base
+branch is exported as `BF_BASE_REF` (e.g. `main`, `bf/v0.6`); fall back to
+`main` if it is unset:
 
 ```bash
-git diff origin/main...HEAD
+git diff "origin/${BF_BASE_REF:-main}...HEAD"
 ```
 
-Never use two-dot `git diff origin/main HEAD` — it includes commits from main that are not part of this PR.
+Use the PR's actual base branch — diffing against a hardcoded `origin/main`
+when the PR targets a release branch surfaces findings for commits that belong
+to the base branch, not this PR.
+
+Never use two-dot `git diff "origin/${BF_BASE_REF:-main}" HEAD` — it includes commits from the base branch that are not part of this PR.
 
 ## Step 2: Load Project Conventions
 
