@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Run Blackfuel code review
-        uses: blackfuel-ai/code-review@v1
+        uses: blackfuel-ai/code-review@1f76104ab0983f57d949662e6c3e932502d15a37 # v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           github-token: ${{ github.token }}
