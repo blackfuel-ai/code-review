@@ -17,7 +17,7 @@ inputs:
     description: Model identifier (e.g. `deepseek-ai/deepseek-v4-flash-0731`).
     required: false
     default: 'deepseek-ai/deepseek-v4-flash-0731'
-  anthropic-base-url:
+  openai-base-url:
     description: Base URL for the inference endpoint. Defaults to Fuel1 — point this at any Anthropic-compatible API to use a different provider.
     required: false
     default: 'https://api.fuel1.ai'
@@ -121,7 +121,7 @@ runs:
       shell: bash
       env:
         ANTHROPIC_AUTH_TOKEN: ${{ inputs.openai-api-key }}
-        ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
+        ANTHROPIC_BASE_URL: ${{ inputs.openai-base-url }}
         # Map every Claude Code model tier to the review model
         ANTHROPIC_DEFAULT_FABLE_MODEL: ${{ inputs.model }}
         ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.model }}
@@ -173,7 +173,7 @@ runs:
       shell: bash
       env:
         ANTHROPIC_AUTH_TOKEN: ${{ inputs.openai-api-key }}
-        ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
+        ANTHROPIC_BASE_URL: ${{ inputs.openai-base-url }}
         # Map every Claude Code model tier to the review model
         ANTHROPIC_DEFAULT_FABLE_MODEL: ${{ inputs.model }}
         ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.model }}

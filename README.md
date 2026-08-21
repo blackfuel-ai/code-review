@@ -20,7 +20,7 @@ Runs against any Anthropic-compatible inference endpoint. Defaults to [Fuel1](ht
 
 ## Quick start
 
-1. **Add a secret.** Settings → Secrets and variables → Actions → New repository secret. Name `OPENAI_API_KEY`, value your Fuel1 API key (or any Anthropic-compatible key, paired with `anthropic-base-url`).
+1. **Add a secret.** Settings → Secrets and variables → Actions → New repository secret. Name `OPENAI_API_KEY`, value your Fuel1 API key (or any Anthropic-compatible key, paired with `openai-base-url`).
 2. **Add the workflow.** Create `.github/workflows/pr-review.yml` with the minimal config below.
 3. **Open a PR.** Within ~2 minutes you'll see a sticky review comment and a verdict review on the PR page.
 
@@ -64,7 +64,7 @@ Pin to `@v1` for the latest stable release, or to a commit SHA for fully reprodu
 | `openai-api-key` | yes | — | API key for the inference endpoint. |
 | `github-token` | yes | — | Token with `contents:write` and `pull-requests:write`. `${{ github.token }}` is fine here; see `approver-token` below if you need approval reviews from a named bot. |
 | `model` | no | `deepseek-ai/deepseek-v4-flash-0731` | Model identifier passed to Claude Code (`--model`) against the Anthropic-compatible endpoint. |
-| `anthropic-base-url` | no | `https://api.fuel1.ai` | Anthropic-compatible base URL. Override to use another provider. |
+| `openai-base-url` | no | `https://api.fuel1.ai` | Anthropic-compatible base URL. Override to use another provider. |
 | `reviewer-handle` | no | `code-reviewer` | Handle (without `@`) humans can mention in PR comments to leave advisory notes. |
 | `submit-verdict` | no | `true` | When `true`, triage the sticky review into a verdict and submit a formal PR review. Set to `false` for advisory mode (sticky comment only, no merge gating). |
 | `approver-token` | no | — | Optional PAT used only for the `gh pr review` submission. See [the verdict gating note](#a-note-on-verdict-gating). |
