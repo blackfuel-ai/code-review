@@ -1,5 +1,5 @@
 name: Blackfuel Code Review
-description: AI-powered code review on pull requests, against any OpenAI-compatible inference endpoint.
+description: AI-powered code review on pull requests, against any Anthropic-compatible inference endpoint.
 author: Blackfuel
 
 branding:
@@ -8,17 +8,17 @@ branding:
 
 inputs:
   openai-api-key:
-    description: API key for the OpenAI-compatible inference endpoint (defaults to Fuel1 by Blackfuel).
+    description: API key for the Anthropic-compatible inference endpoint (defaults to Fuel1 by Blackfuel).
     required: true
   github-token:
     description: GitHub token with `contents:write` and `pull-requests:write` scopes. The default `GITHUB_TOKEN` works for the default scope; provide a PAT if you want approval reviews from a specific bot identity.
     required: true
   model:
-    description: Model identifier (e.g. `oai@MiniMaxAI/MiniMax-M2.7`).
+    description: Model identifier (e.g. `deepseek-ai/deepseek-v4-flash-0731`).
     required: false
-    default: 'oai@MiniMaxAI/MiniMax-M2.7'
+    default: 'deepseek-ai/deepseek-v4-flash-0731'
   openai-base-url:
-    description: Base URL for the inference endpoint. Defaults to Fuel1 — point this at any OpenAI-compatible API to use a different provider.
+    description: Base URL for the inference endpoint. Defaults to Fuel1 — point this at any Anthropic-compatible API to use a different provider.
     required: false
     default: 'https://api.fuel1.ai'
   reviewer-handle:
@@ -60,7 +60,7 @@ runs:
         echo "BF_REVIEW_ACTION_SCRIPTS=$tmp" >> "$GITHUB_ENV"
 
     - name: Checkout repository
-      uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         fetch-depth: 0
         ref: ${{ github.event.pull_request.head.ref }}
@@ -87,37 +87,16 @@ runs:
           ls -1 .claude/skills/
         fi
 
-    - name: Setup Bun
-      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-      with:
-        bun-version: 1.3.14
-
     - name: Setup Node.js
-      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: '24'
 
     - name: Install Claude Code CLI
       shell: bash
       run: |
-        npm install -g @anthropic-ai/claude-code@2.1.148
-        # The claudish CLI (the OpenAI-compatible wrapper bf-review invokes)
-        # lives in packages/cli of its monorepo; clone + build + install the
-        # subpackage rather than the root (which is a private workspace with
-        # no bin).
-        # Pinned to a SHA on the 7.x branch for reproducible builds. `git clone
-        # --branch` cannot take a SHA, so init + shallow-fetch the commit
-        # (GitHub allows fetching reachable SHAs) + checkout it directly.
-        src="$(mktemp -d)/claudish"
-        claudish_sha="0e7152f640f4ef3360ccbe57547b4f3ef2e57b9f"  # claudish 7.x
-        git -C "$(dirname "$src")" init -q "$(basename "$src")"
-        git -C "$src" remote add origin "https://github.com/blackfuel-ai/claudish.git"
-        git -C "$src" fetch --depth 1 origin "$claudish_sha"
-        git -C "$src" checkout -q FETCH_HEAD
-        (cd "$src" && bun install --frozen-lockfile 2>/dev/null || (cd "$src" && bun install))
-        (cd "$src" && bun run build:cli)
-        bun install -g "$src/packages/cli"
-        claudish --version
+        npm install -g @anthropic-ai/claude-code@2.1.238
+        claude --version
 
     - name: Fetch reviewer notes
       # Collect PR comments that @-mention the reviewer handle. The notes
@@ -141,9 +120,18 @@ runs:
       id: review
       shell: bash
       env:
-        OPENROUTER_API_KEY: dummy
-        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-        OPENAI_BASE_URL: ${{ inputs.openai-base-url }}
+        ANTHROPIC_AUTH_TOKEN: ${{ inputs.openai-api-key }}
+        ANTHROPIC_BASE_URL: ${{ inputs.openai-base-url }}
+        # Map every Claude Code model tier to the review model
+        ANTHROPIC_DEFAULT_FABLE_MODEL: ${{ inputs.model }}
+        ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.model }}
+        ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.model }}
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.model }}
+        CLAUDE_CODE_SUBAGENT_MODEL: ${{ inputs.model }}
+        # Leaner prompts and higher prompt-cache hit rates
+        ENABLE_TOOL_SEARCH: 'true'
+        CLAUDE_CODE_MAX_CONTEXT_TOKENS: '600000'
+        CLAUDE_CODE_ATTRIBUTION_HEADER: '0'
         BF_REVIEW_MODEL: ${{ inputs.model }}
         REVIEWER_HANDLE: ${{ inputs.reviewer-handle }}
         GH_TOKEN: ${{ inputs.github-token }}
@@ -178,22 +166,33 @@ runs:
 
     - name: Triage findings into a verdict
       id: verdict
-      if: always() && inputs.submit-verdict == 'true'
+      # Requires the review step to have succeeded: a failed review that
+      # still emitted a body must never be triaged into an approval.
+      if: always() && inputs.submit-verdict == 'true' && steps.review.outcome == 'success'
       continue-on-error: true
       shell: bash
       env:
-        OPENROUTER_API_KEY: dummy
-        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
-        OPENAI_BASE_URL: ${{ inputs.openai-base-url }}
+        ANTHROPIC_AUTH_TOKEN: ${{ inputs.openai-api-key }}
+        ANTHROPIC_BASE_URL: ${{ inputs.openai-base-url }}
+        # Map every Claude Code model tier to the review model
+        ANTHROPIC_DEFAULT_FABLE_MODEL: ${{ inputs.model }}
+        ANTHROPIC_DEFAULT_OPUS_MODEL: ${{ inputs.model }}
+        ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.model }}
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.model }}
+        CLAUDE_CODE_SUBAGENT_MODEL: ${{ inputs.model }}
+        # No ENABLE_TOOL_SEARCH here: the verdict agent gets no tool access.
+        CLAUDE_CODE_MAX_CONTEXT_TOKENS: '600000'
+        CLAUDE_CODE_ATTRIBUTION_HEADER: '0'
         BF_REVIEW_MODEL: ${{ inputs.model }}
         GH_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
       run: python3 "$BF_REVIEW_ACTION_SCRIPTS/run_verdict.py"
 
     - name: Submit PR review
-      # Only submit when triage produced a real verdict — avoids posting an
-      # empty "changes requested" review when the verdict step itself errored.
-      if: always() && inputs.submit-verdict == 'true' && steps.verdict.outputs.verdict != ''
+      # Only submit when triage succeeded AND produced a real verdict — a
+      # nonzero-exit triage that still leaked a sentinel must not be submitted,
+      # and an empty verdict means there was nothing to triage.
+      if: always() && inputs.submit-verdict == 'true' && steps.verdict.outcome == 'success' && steps.verdict.outputs.verdict != ''
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.approver-token != '' && inputs.approver-token || inputs.github-token }}

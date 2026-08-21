@@ -29,35 +29,18 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from bf_review_trace import (  # noqa: E402
     _extract_model_usage,
-    _is_remote_provider_model,
     _unwrap_content_blocks,
     append_job_summary,
     build_job_summary as _build_job_summary,
     detect_language,
-    extract_stats as _extract_stats_with_paths,
+    extract_stats,
     format_duration,
-    load_cli_tokens as _load_cli_tokens_from_path,
     truncate,
 )
 
-MODEL = os.environ.get("BF_REVIEW_MODEL", "oai@MiniMaxAI/MiniMax-M2.7")
+MODEL = os.environ.get("BF_REVIEW_MODEL", "deepseek-ai/deepseek-v4-flash-0731")
 MESSAGES_FILE = "/tmp/claude-review-messages.json"
 OUTPUT_FILE = "/tmp/claude-review-output.txt"
-TOKENS_FILE = "/tmp/claude-review-tokens.json"
-
-
-# ---------------------------------------------------------------------------
-# Module-level wrappers (resolve MODEL/TOKENS_FILE at call time so tests can
-# monkeypatch them).
-# ---------------------------------------------------------------------------
-
-
-def load_cli_tokens() -> dict:
-    return _load_cli_tokens_from_path(TOKENS_FILE)
-
-
-def extract_stats(messages: list) -> dict:
-    return _extract_stats_with_paths(messages, model=MODEL, tokens_path=TOKENS_FILE)
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +164,6 @@ def main() -> None:
         messages=messages,
         model=MODEL,
         duration=duration,
-        tokens_path=TOKENS_FILE,
         output_path=OUTPUT_FILE,
         extra_metadata_rows=extra_rows,
     )
@@ -199,10 +181,8 @@ __all__ = [
     "MESSAGES_FILE",
     "MODEL",
     "OUTPUT_FILE",
-    "TOKENS_FILE",
     "_extract_model_usage",
     "_extract_text_from_message",
-    "_is_remote_provider_model",
     "_unwrap_content_blocks",
     "build_header",
     "determine_outcome",
@@ -210,7 +190,6 @@ __all__ = [
     "extract_review_text",
     "extract_stats",
     "format_duration",
-    "load_cli_tokens",
     "load_messages",
     "main",
     "truncate",

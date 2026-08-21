@@ -91,27 +91,24 @@ class TestPrintProgress:
 
 
 class TestBuildCmd:
-    def test_verbose_after_separator(self):
-        # --verbose must come after -- so the CLI doesn't consume it.
-        # Claude Code requires --verbose with -p for stream-json output.
-        cmd = build_cmd("oai@test-model")
-        sep_idx = cmd.index("--")
-        assert "--verbose" in cmd[sep_idx + 1:]
+    def test_invokes_claude_directly(self):
+        cmd = build_cmd("test-model")
+        assert cmd[0] == "claude"
+        assert "-p" in cmd
 
-    def test_separator_present(self):
-        # -- separator prevents the CLI from consuming Claude Code flags.
-        cmd = build_cmd("oai@test-model")
-        assert "--" in cmd
+    def test_verbose_present(self):
+        # Claude Code requires --verbose with -p for stream-json output.
+        cmd = build_cmd("test-model")
+        assert "--verbose" in cmd
 
     def test_model_is_passed(self):
-        cmd = build_cmd("oai@MiniMaxAI/MiniMax-M2.7")
+        cmd = build_cmd("deepseek-ai/deepseek-v4-flash-0731")
         idx = cmd.index("--model")
-        assert cmd[idx + 1] == "oai@MiniMaxAI/MiniMax-M2.7"
+        assert cmd[idx + 1] == "deepseek-ai/deepseek-v4-flash-0731"
 
     def test_output_format_is_stream_json(self):
         # stream-json gives per-turn messages (assistant, tool_use, result).
-        # Requires --verbose after -- to reach Claude Code.
-        cmd = build_cmd("oai@test")
+        cmd = build_cmd("test-model")
         idx = cmd.index("--output-format")
         assert cmd[idx + 1] == "stream-json"
 

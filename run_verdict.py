@@ -10,13 +10,12 @@ the code. This separates finding issues from deciding severity.
 Required env:
     GITHUB_REPOSITORY   owner/repo
     PR_NUMBER           Pull request number
-    OPENAI_API_KEY      API key for the inference endpoint
-    OPENAI_BASE_URL     Base URL (e.g. https://api.fuel1.ai)
+    ANTHROPIC_AUTH_TOKEN  API key for the Anthropic-compatible inference endpoint
+    ANTHROPIC_BASE_URL    Base URL (e.g. https://api.fuel1.ai)
     GITHUB_OUTPUT       GitHub Actions output file
 
 Optional env:
-    OPENROUTER_API_KEY    Set to "dummy" to satisfy the upstream CLI requirement
-    BF_REVIEW_MODEL       Model identifier (default: oai@MiniMaxAI/MiniMax-M2.7)
+    BF_REVIEW_MODEL       Model identifier (default: deepseek-ai/deepseek-v4-flash-0731)
 """
 
 import json
@@ -27,7 +26,7 @@ import sys
 import time
 import uuid
 
-MODEL = os.environ.get("BF_REVIEW_MODEL", "oai@MiniMaxAI/MiniMax-M2.7")
+MODEL = os.environ.get("BF_REVIEW_MODEL", "deepseek-ai/deepseek-v4-flash-0731")
 
 SENTINEL_APPROVED = "VERDICT: APPROVED"
 SENTINEL_CHANGES = "VERDICT: CHANGES_REQUESTED"
@@ -221,14 +220,19 @@ def main():
     prompt = build_verdict_prompt(review_body)
     start_time = time.time()
 
+    # Triage is a pure text task and the prompt embeds LLM-generated
+    # (attacker-influenceable) content, so the verdict agent must never get
+    # tool access. In -p mode tool calls are denied by default; the explicit
+    # --disallowed-tools list is defense-in-depth against any runner-side
+    # settings.json or future default that would auto-approve tools.
     cmd = [
-        "claudish",
-        "--stdin",
+        "claude",
+        "-p",
         "--model", MODEL,
-        "-y",
-        "--",
         "--verbose",
         "--output-format", "stream-json",
+        "--disallowed-tools",
+        "Bash,Read,Write,Edit,Grep,Glob,Agent,WebFetch,WebSearch,NotebookEdit",
     ]
 
     print(f"Starting verdict triage with model {MODEL}", file=sys.stderr)

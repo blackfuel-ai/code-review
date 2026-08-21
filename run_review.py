@@ -5,13 +5,12 @@ Required env:
     GITHUB_REPOSITORY   owner/repo
     PR_NUMBER           Pull request number
     PR_AUTHOR           Pull request author login
-    OPENAI_API_KEY      API key for the inference endpoint
-    OPENAI_BASE_URL     Base URL (e.g. https://api.fuel1.ai)
+    ANTHROPIC_AUTH_TOKEN  API key for the Anthropic-compatible inference endpoint
+    ANTHROPIC_BASE_URL    Base URL (e.g. https://api.fuel1.ai)
     GITHUB_OUTPUT       GitHub Actions output file
 
 Optional env:
-    OPENROUTER_API_KEY      Set to "dummy" to satisfy the upstream CLI requirement
-    BF_REVIEW_MODEL         Model identifier (default: oai@MiniMaxAI/MiniMax-M2.7)
+    BF_REVIEW_MODEL         Model identifier (default: deepseek-ai/deepseek-v4-flash-0731)
     REVIEWER_HANDLE         Handle (without @) humans can mention in PR comments
                             to leave advisory notes for the reviewer.
                             Default: code-reviewer.
@@ -36,16 +35,36 @@ from bf_review_trace import (  # noqa: E402, F401  # _print_progress re-exported
     run_review_cli,
 )
 
-MODEL = os.environ.get("BF_REVIEW_MODEL", "oai@MiniMaxAI/MiniMax-M2.7")
+MODEL = os.environ.get("BF_REVIEW_MODEL", "deepseek-ai/deepseek-v4-flash-0731")
 OUTPUT_FILE = "/tmp/claude-review-output.txt"
 MESSAGES_FILE = "/tmp/claude-review-messages.json"
-TOKENS_FILE = "/tmp/claude-review-tokens.json"
+# Pre-approval allowlist for the review agent (and its persona subagents).
+# With --dangerously-skip-permissions removed, this IS the security boundary:
+# entries here are auto-approved, everything else is denied. Claude Code
+# checks every segment of a piped/chained command against these rules, so
+# pipeline helpers (head/tail/wc/sort/...) must be listed for e.g.
+# `git diff ... | head` to pass. Keep entries read-only.
 ALLOWED_TOOLS = (
-    "Agent,WebSearch,WebFetch,Read,"
-    "Bash(git diff:*),Bash(git log:*),"
+    # Native read-only tools (preferred over their shell equivalents).
+    "Agent,WebSearch,WebFetch,Read,Grep,Glob,"
+    # Git inspection.
+    "Bash(git diff:*),Bash(git log:*),Bash(git show:*),"
+    # Models often prepend --no-pager; the prefix matcher treats that as a
+    # different command, so allow the read-only --no-pager variants too.
+    "Bash(git --no-pager diff:*),Bash(git --no-pager log:*),"
+    "Bash(git --no-pager show:*),"
+    "Bash(git status:*),Bash(git rev-parse:*),Bash(git fetch:*),"
+    "Bash(git branch:*),Bash(git remote:*),"
+    "Bash(git merge-base:*),Bash(git rev-list:*),"
+    # Shell file/text reads.
+    "Bash(grep:*),Bash(rg:*),Bash(find:*),Bash(ls:*),Bash(cat:*),"
+    # Pipeline helpers — needed as segments of piped commands.
+    "Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(echo:*),"
+    "Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(diff:*),"
+    # GitHub read-only queries.
     "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),"
     "Bash(gh pr diff:*),Bash(gh pr view:*),"
-    "Bash(gh pr list:*),Bash(gh api:*)"
+    "Bash(gh pr list:*)"
 )
 
 STICKY_MARKER = "<!-- bf-review-code-report -->"
@@ -239,7 +258,11 @@ You are a senior software architect.
 
 **Before starting the review:**
 
-1. Examine the diff: `git diff origin/{BASE_REF}...HEAD`. Never two-dot.
+1. Examine the diff: `git diff origin/{BASE_REF}...HEAD`. Never two-dot. \
+The base branch of this PR is `{BASE_REF}` — always write it literally in commands \
+and repeat it literally when spawning subagents. NEVER use shell variable expansion \
+(`$BF_BASE_REF`, `${{VAR:-default}}`, or any `$VAR`) in Bash commands: the permission \
+system cannot verify commands containing `$` and will deny them.
 2. Read `CLAUDE.md` at the repository root for project conventions and coding standards. Read CLAUDE.md in any subdirectory related to the changes.
 3. Review the previous review (provided below) if any. Do NOT repeat items already marked `[x]` (resolved). \
 Focus on new or unresolved findings, and carry forward any `[ ]` items that are still valid.
@@ -471,7 +494,6 @@ def main():
         model=MODEL,
         allowed_tools=ALLOWED_TOOLS,
         messages_path=MESSAGES_FILE,
-        tokens_path=TOKENS_FILE,
         output_path=OUTPUT_FILE,
     )
 
@@ -491,7 +513,11 @@ def main():
         except subprocess.CalledProcessError as e:
             print(f"Failed to post sticky comment: {e}", file=sys.stderr)
     else:
-        print("No review body extracted; skipping sticky comment post", file=sys.stderr)
+        # Fail hard: a run with no extractable review body must not report
+        # success, or the verdict step would triage a stale sticky comment
+        # from a previous run into a fresh approval.
+        print("No review body extracted; failing the review step", file=sys.stderr)
+        sys.exit(returncode or 1)
 
     sys.exit(returncode)
 
