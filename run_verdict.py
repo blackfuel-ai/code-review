@@ -220,16 +220,19 @@ def main():
     prompt = build_verdict_prompt(review_body)
     start_time = time.time()
 
-    # No --dangerously-skip-permissions and no allowlist: triage is a pure
-    # text task, and in -p mode any tool call the model attempts is denied.
-    # The prompt embeds LLM-generated (attacker-influenceable) content, so
-    # the verdict agent must never get tool access.
+    # Triage is a pure text task and the prompt embeds LLM-generated
+    # (attacker-influenceable) content, so the verdict agent must never get
+    # tool access. In -p mode tool calls are denied by default; the explicit
+    # --disallowed-tools list is defense-in-depth against any runner-side
+    # settings.json or future default that would auto-approve tools.
     cmd = [
         "claude",
         "-p",
         "--model", MODEL,
         "--verbose",
         "--output-format", "stream-json",
+        "--disallowed-tools",
+        "Bash,Read,Write,Edit,Grep,Glob,Agent,WebFetch,WebSearch,NotebookEdit",
     ]
 
     print(f"Starting verdict triage with model {MODEL}", file=sys.stderr)

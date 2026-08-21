@@ -180,8 +180,7 @@ runs:
         ANTHROPIC_DEFAULT_SONNET_MODEL: ${{ inputs.model }}
         ANTHROPIC_DEFAULT_HAIKU_MODEL: ${{ inputs.model }}
         CLAUDE_CODE_SUBAGENT_MODEL: ${{ inputs.model }}
-        # Leaner prompts and higher prompt-cache hit rates
-        ENABLE_TOOL_SEARCH: 'true'
+        # No ENABLE_TOOL_SEARCH here: the verdict agent gets no tool access.
         CLAUDE_CODE_MAX_CONTEXT_TOKENS: '600000'
         CLAUDE_CODE_ATTRIBUTION_HEADER: '0'
         BF_REVIEW_MODEL: ${{ inputs.model }}

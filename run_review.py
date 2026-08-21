@@ -64,7 +64,7 @@ ALLOWED_TOOLS = (
     # GitHub read-only queries.
     "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),"
     "Bash(gh pr diff:*),Bash(gh pr view:*),"
-    "Bash(gh pr list:*),Bash(gh api:*)"
+    "Bash(gh pr list:*)"
 )
 
 STICKY_MARKER = "<!-- bf-review-code-report -->"
@@ -513,7 +513,11 @@ def main():
         except subprocess.CalledProcessError as e:
             print(f"Failed to post sticky comment: {e}", file=sys.stderr)
     else:
-        print("No review body extracted; skipping sticky comment post", file=sys.stderr)
+        # Fail hard: a run with no extractable review body must not report
+        # success, or the verdict step would triage a stale sticky comment
+        # from a previous run into a fresh approval.
+        print("No review body extracted; failing the review step", file=sys.stderr)
+        sys.exit(returncode or 1)
 
     sys.exit(returncode)
 
