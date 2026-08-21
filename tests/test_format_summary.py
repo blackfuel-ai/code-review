@@ -1,18 +1,15 @@
-import json
 import sys
 import pathlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
-import format_summary
+import format_summary  # noqa: F401
 from format_summary import (
     format_duration,
     _extract_text_from_message,
     _extract_model_usage,
-    _is_remote_provider_model,
     _unwrap_content_blocks,
     extract_review_text,
-    load_cli_tokens,
     truncate,
     detect_language,
     extract_stats,
@@ -239,22 +236,14 @@ class TestExtractStats:
         stats = extract_stats(messages)
         assert stats["tool_calls"] == 2
 
-    def test_remote_provider_reads_token_file(self, monkeypatch, tmp_path):
-        """Remote-provider models read real tokens from the CLI token file."""
-        token_file = tmp_path / "tokens.json"
-        token_file.write_text(json.dumps({
-            "input_tokens": 93999,
-            "output_tokens": 13855,
-            "total_tokens": 107854,
-            "total_cost": 1.256,
-        }))
-        monkeypatch.setattr(format_summary, "TOKENS_FILE", str(token_file))
+    def test_model_usage_read_from_result(self):
+        """Tokens and cost come from ``modelUsage`` on the result message."""
         messages = [
             {
                 "type": "result",
                 "num_turns": 5,
                 "modelUsage": {
-                    "oai@MiniMaxAI/MiniMax-M2.7": {
+                    "deepseek-ai/deepseek-v4-flash-0731": {
                         "inputTokens": 500,
                         "outputTokens": 4387,
                         "costUSD": 0.069,
@@ -264,13 +253,11 @@ class TestExtractStats:
         ]
         stats = extract_stats(messages)
         assert stats["turns"] == 5
-        assert stats["input_tokens"] == 93999
-        assert stats["output_tokens"] == 13855
-        assert abs(stats["cost"] - 1.256) < 1e-9
+        assert stats["input_tokens"] == 500
+        assert stats["output_tokens"] == 4387
+        assert abs(stats["cost"] - 0.069) < 1e-9
 
-    def test_remote_provider_no_token_file(self, monkeypatch):
-        """Remote-provider model without token file falls back to zeros."""
-        monkeypatch.setattr(format_summary, "TOKENS_FILE", "/tmp/nonexistent.json")
+    def test_result_without_model_usage_returns_zeros(self):
         messages = [
             {
                 "type": "result",
@@ -283,15 +270,8 @@ class TestExtractStats:
         assert stats["output_tokens"] == 0
         assert stats["cost"] == 0.0
 
-    def test_remote_provider_mixed_messages(self, monkeypatch, tmp_path):
-        """Tool calls and turns counted; tokens from the CLI token file."""
-        token_file = tmp_path / "tokens.json"
-        token_file.write_text(json.dumps({
-            "input_tokens": 28976,
-            "output_tokens": 217,
-            "total_cost": 0.0597,
-        }))
-        monkeypatch.setattr(format_summary, "TOKENS_FILE", str(token_file))
+    def test_mixed_messages(self):
+        """Tool calls and turns counted alongside modelUsage tokens."""
         messages = [
             {
                 "type": "assistant",
@@ -301,6 +281,13 @@ class TestExtractStats:
             {
                 "type": "result",
                 "num_turns": 3,
+                "modelUsage": {
+                    "deepseek-ai/deepseek-v4-flash-0731": {
+                        "inputTokens": 28976,
+                        "outputTokens": 217,
+                        "costUSD": 0.0597,
+                    }
+                },
             },
         ]
         stats = extract_stats(messages)
@@ -341,9 +328,8 @@ class TestExtractStats:
         stats = extract_stats(messages)
         assert stats["tool_calls"] == 2
 
-    def test_result_usage_without_model_usage_suppressed(self, monkeypatch):
-        """Without modelUsage, result.usage tokens are not trusted for native models."""
-        monkeypatch.setattr(format_summary, "MODEL", "claude-sonnet-4-6")
+    def test_result_usage_without_model_usage_suppressed(self):
+        """Without modelUsage, result.usage tokens are not trusted."""
         messages = [
             {
                 "type": "result",
@@ -446,24 +432,6 @@ class TestExtractModelUsage:
 # ---------------------------------------------------------------------------
 # extract_stats — modelUsage preference
 # ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# _is_remote_provider_model
-# ---------------------------------------------------------------------------
-
-class TestIsRemoteProviderModel:
-    def test_oai_prefix(self):
-        assert _is_remote_provider_model("oai@MiniMaxAI/MiniMax-M2.7") is True
-
-    def test_g_prefix(self):
-        assert _is_remote_provider_model("g@gemini-2.5-pro") is True
-
-    def test_native_claude(self):
-        assert _is_remote_provider_model("claude-sonnet-4-6") is False
-
-    def test_empty_string(self):
-        assert _is_remote_provider_model("") is False
-
 
 # ---------------------------------------------------------------------------
 # extract_stats — modelUsage preference

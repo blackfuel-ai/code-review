@@ -1,6 +1,6 @@
 """bf-review CLI runner + Job Summary formatter.
 
-Captures the review CLI's stream-json output into messages/tokens/raw files,
+Captures the review CLI's stream-json output into messages/raw files,
 then renders a GitHub Actions Job Summary with a metadata table, a
 collapsible execution trace (one block per tool_use + tool_result), and a
 raw log tail.
@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import os
-import pathlib
 import re
 import subprocess
 import sys
@@ -35,15 +34,19 @@ def build_cmd(
 ) -> list[str]:
     """Build the review CLI command.
 
-    With stream_json=True, appends ``-- --verbose --output-format stream-json``
-    so Claude Code emits one JSON message per turn. The ``--`` separator
-    prevents the CLI from consuming ``--verbose`` as its own flag.
+    Invokes Claude Code directly (``claude -p``), reading the prompt from
+    stdin. With stream_json=True, adds ``--verbose --output-format
+    stream-json`` so Claude Code emits one JSON message per turn.
+
+    Deliberately NOT ``--dangerously-skip-permissions``: in ``-p`` mode,
+    tools on the allowlist are pre-approved and everything else is denied,
+    so the allowlist is the actual security boundary. Bypass-permissions
+    would auto-approve every tool and make the allowlist decorative.
     """
     cmd = [
-        "claudish",
-        "--stdin",
+        "claude",
+        "-p",
         "--model", model,
-        "-y",
         "--allowed-tools", allowed_tools,
     ]
     if mcp_config:
@@ -51,7 +54,7 @@ def build_cmd(
     if add_dir:
         cmd.extend(["--add-dir", add_dir])
     if stream_json:
-        cmd.extend(["--", "--verbose", "--output-format", "stream-json"])
+        cmd.extend(["--verbose", "--output-format", "stream-json"])
     return cmd
 
 
@@ -80,55 +83,12 @@ def _print_progress(msg: dict) -> None:
         print(f"  Result: {turns} turns, ${cost:.4f}", file=sys.stderr)
 
 
-def save_cli_tokens(started_at: float, tokens_path: str) -> None:
-    """Aggregate the CLI's per-process token files into ``tokens_path``.
-
-    The CLI writes real provider token counts to ``~/.claudish/tokens-{pid}.json``
-    for each process it spawns (main + subagents). Sum across every file
-    written during this run so the summary reflects total usage.
-    """
-    cli_state_dir = pathlib.Path.home() / ".claudish"
-    if not cli_state_dir.is_dir():
-        print(f"  No CLI state directory at {cli_state_dir}", file=sys.stderr)
-        return
-
-    candidates = [
-        p for p in cli_state_dir.glob("tokens-*.json")
-        if p.stat().st_mtime >= started_at - 1
-    ]
-    if not candidates:
-        print(f"  No CLI token file found in {cli_state_dir}", file=sys.stderr)
-        return
-
-    total = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "total_cost": 0.0}
-    for src in candidates:
-        try:
-            data = json.loads(src.read_text())
-        except (OSError, json.JSONDecodeError) as e:
-            print(f"  Skipping {src}: {e}", file=sys.stderr)
-            continue
-        total["input_tokens"] += data.get("input_tokens", 0)
-        total["output_tokens"] += data.get("output_tokens", 0)
-        total["total_tokens"] += data.get("total_tokens", 0)
-        total["total_cost"] += data.get("total_cost", 0.0)
-
-    with open(tokens_path, "w") as f:
-        json.dump(total, f)
-    print(
-        f"  Aggregated CLI tokens from {len(candidates)} file(s): "
-        f"{total['input_tokens']} in + {total['output_tokens']} out, "
-        f"${total['total_cost']:.4f}",
-        file=sys.stderr,
-    )
-
-
 def run_review_cli(
     prompt: str,
     *,
     model: str,
     allowed_tools: str,
     messages_path: str,
-    tokens_path: str,
     output_path: str,
     mcp_config: str = "",
     add_dir: str = "",
@@ -136,9 +96,8 @@ def run_review_cli(
     """Run the review CLI with stream-json capture.
 
     Streams stdout, parses each line as a JSON message, prints progress to
-    stderr, and writes three files on completion:
+    stderr, and writes two files on completion:
       * messages_path  — JSON list of parsed stream-json messages
-      * tokens_path    — aggregated per-process token totals
       * output_path    — raw stdout (one line per turn)
 
     Returns ``(returncode, duration_seconds, messages)``.
@@ -174,7 +133,6 @@ def run_review_cli(
             print(line, file=sys.stderr)
 
     proc.wait()
-    save_cli_tokens(start_time, tokens_path)
     duration = int(time.time() - start_time)
 
     with open(messages_path, "w") as f:
@@ -237,23 +195,6 @@ def _unwrap_content_blocks(message) -> list:
     return []
 
 
-def _is_remote_provider_model(model: str) -> bool:
-    """True when the model uses a remote-provider prefix (e.g. ``oai@``).
-
-    The CLI's SSE adapter emits hardcoded placeholder input tokens in
-    stream-json for these models, so prefer the per-process tokens file.
-    """
-    return "@" in model
-
-
-def load_cli_tokens(tokens_path: str) -> dict:
-    try:
-        with open(tokens_path) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
 def _extract_model_usage(model_usage: dict) -> tuple[int, int, float]:
     total_in = 0
     total_out = 0
@@ -271,12 +212,11 @@ def _extract_model_usage(model_usage: dict) -> tuple[int, int, float]:
     return total_in, total_out, total_cost
 
 
-def extract_stats(messages: list, *, model: str, tokens_path: str) -> dict:
+def extract_stats(messages: list) -> dict:
     """Extract turns / tool_calls / tokens / cost from a message stream.
 
-    For remote-provider models, tokens and cost come from the CLI's
-    per-process tokens file (real provider data). For native Claude Code
-    runs, ``modelUsage`` on the result message is authoritative.
+    ``modelUsage`` on the result message is authoritative — it holds
+    cumulative totals across all turns.
     """
     tool_calls = 0
     turns = 0
@@ -294,18 +234,12 @@ def extract_stats(messages: list, *, model: str, tokens_path: str) -> dict:
         elif msg_type == "result":
             turns = msg.get("num_turns", 0)
 
-    if _is_remote_provider_model(model):
-        tokens = load_cli_tokens(tokens_path)
-        input_tokens = tokens.get("input_tokens", 0)
-        output_tokens = tokens.get("output_tokens", 0)
-        cost = tokens.get("total_cost", 0.0)
-    else:
-        for msg in messages:
-            if msg.get("type") == "result":
-                model_usage = msg.get("modelUsage", {})
-                if model_usage:
-                    input_tokens, output_tokens, cost = _extract_model_usage(model_usage)
-                break
+    for msg in messages:
+        if msg.get("type") == "result":
+            model_usage = msg.get("modelUsage", {})
+            if model_usage:
+                input_tokens, output_tokens, cost = _extract_model_usage(model_usage)
+            break
 
     return {
         "tool_calls": tool_calls,
@@ -430,7 +364,6 @@ def build_job_summary(
     messages: list,
     model: str,
     duration: int,
-    tokens_path: str,
     output_path: str,
     extra_metadata_rows: list[tuple[str, str]] | tuple = (),
 ) -> str:
@@ -442,7 +375,7 @@ def build_job_summary(
                           and before computed stats. Empty values are skipped.
     """
     duration_str = format_duration(duration)
-    stats = extract_stats(messages, model=model, tokens_path=tokens_path)
+    stats = extract_stats(messages)
 
     lines = [
         f"## {title}",

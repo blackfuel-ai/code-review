@@ -23,19 +23,26 @@ If your spawn prompt says explicitly "No previous review — this is the first r
 
 ## Step 1: Collect the Diff
 
-Fetch the full diff against the branch this PR is opened against. The base
-branch is exported as `BF_BASE_REF` (e.g. `main`, `bf/v0.6`); fall back to
-`main` if it is unset:
+Fetch the full diff against the branch this PR is opened against. Your spawn
+prompt names the base branch explicitly (e.g. `main`, `bf/v0.6`) — write it
+LITERALLY into the command:
 
 ```bash
-git diff "origin/${BF_BASE_REF:-main}...HEAD"
+git diff origin/main...HEAD
 ```
+
+IMPORTANT: never use shell variable expansion (`$BF_BASE_REF`,
+`${BF_BASE_REF:-main}`, or any `$VAR`) in Bash commands — the permission
+system cannot statically verify commands containing `$` and will DENY them.
+Always substitute the literal branch name yourself. The same applies to
+`&&`-chained `echo "$VAR"` debugging: skip it.
 
 Use the PR's actual base branch — diffing against a hardcoded `origin/main`
 when the PR targets a release branch surfaces findings for commits that belong
-to the base branch, not this PR.
+to the base branch, not this PR. If your spawn prompt somehow does not name
+the base branch, discover it with `git branch -r` and use the literal name.
 
-Never use two-dot `git diff "origin/${BF_BASE_REF:-main}" HEAD` — it includes commits from the base branch that are not part of this PR.
+Never use two-dot `git diff origin/<base> HEAD` — it includes commits from the base branch that are not part of this PR.
 
 ## Step 2: Load Project Conventions
 

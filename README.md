@@ -4,7 +4,7 @@
 
 AI-powered code review for GitHub pull requests. Runs a senior-architect-style review with three expert personas, posts a sticky review comment with structured findings, and emits an `approved` / `changes_requested` verdict you can wire into a PR approval gate.
 
-Runs against any OpenAI-compatible inference endpoint. Defaults to [Fuel1](https://fuel1.ai) by Blackfuel.
+Runs against any Anthropic-compatible inference endpoint. Defaults to [Fuel1](https://fuel1.ai) by Blackfuel.
 
 ## Contents
 
@@ -20,7 +20,7 @@ Runs against any OpenAI-compatible inference endpoint. Defaults to [Fuel1](https
 
 ## Quick start
 
-1. **Add a secret.** Settings → Secrets and variables → Actions → New repository secret. Name `OPENAI_API_KEY`, value your Fuel1 API key (or any OpenAI-compatible key, paired with `openai-base-url`).
+1. **Add a secret.** Settings → Secrets and variables → Actions → New repository secret. Name `OPENAI_API_KEY`, value your Fuel1 API key (or any Anthropic-compatible key, paired with `anthropic-base-url`).
 2. **Add the workflow.** Create `.github/workflows/pr-review.yml` with the minimal config below.
 3. **Open a PR.** Within ~2 minutes you'll see a sticky review comment and a verdict review on the PR page.
 
@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: blackfuel-ai/code-review@v1
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          anthropic-api-key: ${{ secrets.OPENAI_API_KEY }}
           github-token: ${{ github.token }}
 ```
 
@@ -61,10 +61,10 @@ Pin to `@v1` for the latest stable release, or to a commit SHA for fully reprodu
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `openai-api-key` | yes | — | API key for the inference endpoint. |
+| `anthropic-api-key` | yes | — | API key for the inference endpoint. |
 | `github-token` | yes | — | Token with `contents:write` and `pull-requests:write`. `${{ github.token }}` is fine here; see `approver-token` below if you need approval reviews from a named bot. |
-| `model` | no | `oai@MiniMaxAI/MiniMax-M2.7` | Model identifier in `<provider>@<model>` form, where `<provider>` is the inference provider key (`oai` for the OpenAI-compatible endpoint). |
-| `openai-base-url` | no | `https://api.fuel1.ai` | OpenAI-compatible base URL. Override to use another provider. |
+| `model` | no | `deepseek-ai/deepseek-v4-flash-0731` | Model identifier passed to Claude Code (`--model`) against the Anthropic-compatible endpoint. |
+| `anthropic-base-url` | no | `https://api.fuel1.ai` | Anthropic-compatible base URL. Override to use another provider. |
 | `reviewer-handle` | no | `code-reviewer` | Handle (without `@`) humans can mention in PR comments to leave advisory notes. |
 | `submit-verdict` | no | `true` | When `true`, triage the sticky review into a verdict and submit a formal PR review. Set to `false` for advisory mode (sticky comment only, no merge gating). |
 | `approver-token` | no | — | Optional PAT used only for the `gh pr review` submission. See [the verdict gating note](#a-note-on-verdict-gating). |
