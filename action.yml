@@ -7,7 +7,7 @@ branding:
   color: purple
 
 inputs:
-  anthropic-api-key:
+  openai-api-key:
     description: API key for the Anthropic-compatible inference endpoint (defaults to Fuel1 by Blackfuel).
     required: true
   github-token:
@@ -120,7 +120,7 @@ runs:
       id: review
       shell: bash
       env:
-        ANTHROPIC_AUTH_TOKEN: ${{ inputs.anthropic-api-key }}
+        ANTHROPIC_AUTH_TOKEN: ${{ inputs.openai-api-key }}
         ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
         # Map every Claude Code model tier to the review model
         ANTHROPIC_DEFAULT_FABLE_MODEL: ${{ inputs.model }}
@@ -172,7 +172,7 @@ runs:
       continue-on-error: true
       shell: bash
       env:
-        ANTHROPIC_AUTH_TOKEN: ${{ inputs.anthropic-api-key }}
+        ANTHROPIC_AUTH_TOKEN: ${{ inputs.openai-api-key }}
         ANTHROPIC_BASE_URL: ${{ inputs.anthropic-base-url }}
         # Map every Claude Code model tier to the review model
         ANTHROPIC_DEFAULT_FABLE_MODEL: ${{ inputs.model }}

@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: blackfuel-ai/code-review@v1
         with:
-          anthropic-api-key: ${{ secrets.OPENAI_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           github-token: ${{ github.token }}
 ```
 
@@ -61,7 +61,7 @@ Pin to `@v1` for the latest stable release, or to a commit SHA for fully reprodu
 
 | Input | Required | Default | Description |
 |---|---|---|---|
-| `anthropic-api-key` | yes | — | API key for the inference endpoint. |
+| `openai-api-key` | yes | — | API key for the inference endpoint. |
 | `github-token` | yes | — | Token with `contents:write` and `pull-requests:write`. `${{ github.token }}` is fine here; see `approver-token` below if you need approval reviews from a named bot. |
 | `model` | no | `deepseek-ai/deepseek-v4-flash-0731` | Model identifier passed to Claude Code (`--model`) against the Anthropic-compatible endpoint. |
 | `anthropic-base-url` | no | `https://api.fuel1.ai` | Anthropic-compatible base URL. Override to use another provider. |
